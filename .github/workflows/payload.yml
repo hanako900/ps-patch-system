@@ -29,7 +29,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
 
     - name: Tell tools version
@@ -71,7 +71,19 @@ jobs:
         ref: 09c030d69717187560d1b281b2c933ef99c54416
 
     - name: Install update PS5 SDK
-      run: make "DESTDIR=${{ env.PS5_PAYLOAD_SDK }}" clean install -j "$(nproc)"
+      run: |
+        # Backport the official SDK's 13.42 case onto the original pinned SDK.
+        # 13.40 and 13.42 share the addresses used by this SDK.
+        python3 - <<'PY'
+        from pathlib import Path
+        path = Path('crt/kernel.c')
+        source = path.read_text()
+        anchor = '  case 0x13400000:\n'
+        if source.count(anchor) != 1 or 'case 0x13420000:' in source:
+            raise SystemExit('Unexpected SDK source; refusing to apply FW patch')
+        path.write_text(source.replace(anchor, anchor + '  case 0x13420000:\n'))
+        PY
+        make "DESTDIR=${{ env.PS5_PAYLOAD_SDK }}" clean install -j "$(nproc)"
 
     - name: Checkout Payload
       uses: actions/checkout@main
@@ -158,30 +170,11 @@ jobs:
           patch/shellcore_onNewProcess.h
           patch-server/usermode_prx_load.h
 
-    - name: Upload patch-bundle-orbis
-      if: github.event_name == 'pull_request'
-      uses: actions/upload-artifact@main
+    - name: Upload experimental PS5 build
+      uses: actions/upload-artifact@v4
       with:
-        name: patch-bundle-orbis
-        path: build_ps4/patch-bundle-loader/patch-bundle-loader-orbis.elf
-        archive: false
-
-    - name: Upload patch-bundle-prospero
-      if: github.event_name == 'pull_request'
-      uses: actions/upload-artifact@main
-      with:
-        name: patch-bundle-prospero
-        path: build_ps5/patch-bundle-loader/patch-bundle-loader-prospero.elf
-        archive: false
-
-    - name: Upload release
-      if: github.event_name != 'pull_request'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        gh release create "${{ github.run_id }}" \
-        build_ps4/patch-bundle/patch-bundle-orbis.elf \
-        build_ps5/patch-bundle/patch-bundle-prospero.elf \
-        build_ps4/patch-bundle-loader/patch-bundle-loader-orbis.elf \
-        build_ps5/patch-bundle-loader/patch-bundle-loader-prospero.elf \
-        --target "${{ GITHUB.SHA }}" -t "${{ github.run_id }}" -p
+        name: ps5-fw1342-experimental
+        if-no-files-found: error
+        path: |
+          build_ps5/patch-bundle/patch-bundle-prospero.elf
+          build_ps5/patch-bundle-loader/patch-bundle-loader-prospero.elf
