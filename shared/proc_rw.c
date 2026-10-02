@@ -38,6 +38,7 @@ static unsigned long vmspace_pmap(unsigned long vmspace_kaddr)
         case 0x105 ... 0x550:
             return vmspace_kaddr + 0x2E0;
         case 0x600 ... 0x1340:
+        case 0x1342:  // official PS5 SDK uses VM_PMAP +0x2E8 for 13.42
             return vmspace_kaddr + 0x2E8;
         default:
             return 0;  // unsupported fw version
